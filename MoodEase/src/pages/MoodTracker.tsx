@@ -1,22 +1,88 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, TrendingUp, Edit2, Trash2 } from 'lucide-react';
+import { Calendar, TrendingUp, Trash2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase, Mood } from '../lib/supabase';
 import { FloatingBubbles } from '../components/FloatingBubbles';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+} from 'chart.js';
+import { Line } from 'react-chartjs-2';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
+
+// Define the Mood type again, as it's no longer imported
+export interface Mood {
+  id: string;
+  user_id: string;
+  mood_value: number;
+  mood_emoji: string;
+  notes: string | null;
+  created_at: string;
+}
+
+const moodEmojis = [
+  { value: 1, emoji: '😢', label: 'Struggling' },
+  { value: 2, emoji: '😕', label: 'Down' },
+  { value: 3, emoji: '😐', label: 'Okay' },
+  { value: 4, emoji: '🙂', label: 'Good' },
+  { value: 5, emoji: '😄', label: 'Amazing' },
+];
+
+const API_URL = 'http://localhost:4000/api';
 
 export function MoodTracker() {
-  const { profile } = useAuth();
-  const [moods, setMoods] = useState<Mood[]>([]);
+  const { profile, token } = useAuth(); // Get profile and token
+  const [allMoods, setAllMoods] = useState<Mood[]>([]); // All moods from backend
+  const [filteredMoods, setFilteredMoods] = useState<Mood[]>([]); // Moods for display
   const [filter, setFilter] = useState<'all' | 'week' | 'month'>('week');
+  const [chartData, setChartData] = useState<any>(null);
 
   useEffect(() => {
     loadMoods();
-  }, [filter]);
+  }, [profile, token]); // Load once when auth is ready
+
+  useEffect(() => {
+    // This effect runs when 'allMoods' or 'filter' changes
+    filterAndFormatData();
+  }, [allMoods, filter]);
 
   const loadMoods = async () => {
-    if (!profile) return;
+    if (!profile || !token) return;
 
+    try {
+      const res = await fetch(`${API_URL}/moods`, {
+        headers: {
+          'Authorization': `Bearer ${token}`, // Send the token
+        },
+      });
+      if (!res.ok) {
+        throw new Error('Failed to fetch moods');
+      }
+      const data: Mood[] = await res.json();
+      setAllMoods(data); // Store all moods
+    } catch (error) {
+      console.error('Error loading moods:', error);
+    }
+  };
+
+  const filterAndFormatData = () => {
     const now = new Date();
     let startDate = new Date();
 
@@ -25,36 +91,78 @@ export function MoodTracker() {
     } else if (filter === 'month') {
       startDate.setDate(now.getDate() - 30);
     } else {
-      startDate.setFullYear(now.getFullYear() - 1);
+      startDate.setFullYear(now.getFullYear() - 10); // 'all' = 10 years
     }
 
-    const { data } = await supabase
-      .from('moods')
-      .select('*')
-      .eq('user_id', profile.id)
-      .gte('created_at', startDate.toISOString())
-      .order('created_at', { ascending: false });
+    // Filter the moods based on the date range
+    const newFilteredMoods = allMoods.filter(
+      (mood) => new Date(mood.created_at) >= startDate
+    );
+    setFilteredMoods(newFilteredMoods); // Update state for list
 
-    if (data) {
-      setMoods(data);
-    }
+    // Format data for the chart (needs to be oldest-to-newest)
+    formatChartData(newFilteredMoods);
+  };
+
+  const formatChartData = (data: Mood[]) => {
+    // We must reverse the data for the chart (oldest to newest)
+    const chartMoods = [...data].reverse();
+
+    const labels = chartMoods.map((mood) =>
+      new Date(mood.created_at).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      })
+    );
+    const dataPoints = chartMoods.map((mood) => mood.mood_value);
+
+    setChartData({
+      labels,
+      datasets: [
+        {
+          label: 'Your Mood',
+          data: dataPoints,
+          borderColor: '#8B5CF6',
+          backgroundColor: 'rgba(139, 92, 246, 0.1)',
+          fill: true,
+          tension: 0.3,
+        },
+      ],
+    });
   };
 
   const deleteMood = async (id: string) => {
-    await supabase.from('moods').delete().eq('id', id);
-    loadMoods();
+    if (!token) return;
+    try {
+      await fetch(`${API_URL}/moods/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`, // Send the token
+        },
+      });
+      // Reload all moods from the server
+      loadMoods();
+    } catch (error) {
+      console.error('Error deleting mood:', error);
+    }
   };
 
-  const averageMood = moods.length > 0
-    ? (moods.reduce((sum, m) => sum + m.mood_value, 0) / moods.length).toFixed(1)
-    : '0';
+  const averageMood =
+    filteredMoods.length > 0
+      ? (
+          filteredMoods.reduce((sum, m) => sum + m.mood_value, 0) /
+          filteredMoods.length
+        ).toFixed(1)
+      : '0';
 
-  const moodCounts = moods.reduce((acc, mood) => {
+  const moodCounts = filteredMoods.reduce((acc, mood) => {
     acc[mood.mood_emoji] = (acc[mood.mood_emoji] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 
-  const mostFrequentMood = Object.entries(moodCounts).sort((a, b) => b[1] - a[1])[0];
+  const mostFrequentMood = Object.entries(moodCounts).sort(
+    (a, b) => b[1] - a[1]
+  )[0];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 pt-20 pb-8 px-4">
@@ -83,7 +191,9 @@ export function MoodTracker() {
           <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 shadow-lg">
             <div className="flex items-center justify-between mb-2">
               <TrendingUp className="text-purple-600" size={24} />
-              <span className="text-3xl font-bold text-gray-800">{averageMood}</span>
+              <span className="text-3xl font-bold text-gray-800">
+                {averageMood}
+              </span>
             </div>
             <p className="text-sm text-gray-600">Average Mood</p>
           </div>
@@ -91,7 +201,9 @@ export function MoodTracker() {
           <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 shadow-lg">
             <div className="flex items-center justify-between mb-2">
               <Calendar className="text-pink-600" size={24} />
-              <span className="text-3xl font-bold text-gray-800">{moods.length}</span>
+              <span className="text-3xl font-bold text-gray-800">
+                {filteredMoods.length}
+              </span>
             </div>
             <p className="text-sm text-gray-600">Total Entries</p>
           </div>
@@ -111,6 +223,47 @@ export function MoodTracker() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
+          className="bg-white/60 backdrop-blur-sm rounded-3xl p-6 shadow-lg mb-8"
+        >
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">
+            Your Mood Trend
+          </h2>
+          {chartData ? (
+            <div className="h-64">
+              <Line
+                data={chartData}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  scales: {
+                    y: {
+                      min: 1,
+                      max: 5,
+                      ticks: {
+                        stepSize: 1,
+                        callback: (value) => {
+                          const mood = moodEmojis.find(
+                            (m) => m.value === value
+                          );
+                          return mood ? mood.emoji : '';
+                        },
+                      },
+                    },
+                  },
+                }}
+              />
+            </div>
+          ) : (
+            <div className="h-64 flex items-center justify-center">
+              <p className="text-gray-600">Loading your mood chart...</p>
+            </div>
+          )}
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
           className="bg-white/60 backdrop-blur-sm rounded-3xl p-6 shadow-lg"
         >
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-4">
@@ -132,7 +285,7 @@ export function MoodTracker() {
             </div>
           </div>
 
-          {moods.length === 0 ? (
+          {filteredMoods.length === 0 ? (
             <div className="text-center py-12">
               <span className="text-6xl mb-4 block">📊</span>
               <p className="text-gray-600">No mood entries yet</p>
@@ -142,7 +295,7 @@ export function MoodTracker() {
             </div>
           ) : (
             <div className="space-y-3">
-              {moods.map((mood) => (
+              {filteredMoods.map((mood) => (
                 <motion.div
                   key={mood.id}
                   initial={{ opacity: 0, x: -20 }}
@@ -154,17 +307,23 @@ export function MoodTracker() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-sm font-medium text-gray-700">
-                          {new Date(mood.created_at).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
+                          {new Date(mood.created_at).toLocaleDateString(
+                            'en-US',
+                            {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            }
+                          )}
                         </span>
                         <span className="text-xs text-gray-500">
-                          {new Date(mood.created_at).toLocaleTimeString('en-US', {
-                            hour: 'numeric',
-                            minute: '2-digit',
-                          })}
+                          {new Date(mood.created_at).toLocaleTimeString(
+                            'en-US',
+                            {
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            }
+                          )}
                         </span>
                       </div>
                       {mood.notes && (

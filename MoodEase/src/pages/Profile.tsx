@@ -1,18 +1,20 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { User, Moon, Sun, Settings, LogOut, BarChart3 } from 'lucide-react';
+import { Moon, Sun, LogOut, BarChart3 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabase';
 import { FloatingBubbles } from '../components/FloatingBubbles';
 
 type ProfileProps = {
   onNavigate: (page: string) => void;
 };
 
+const API_URL = 'http://localhost:4000/api';
+
 export function Profile({ onNavigate }: ProfileProps) {
-  const { profile, signOut } = useAuth();
-  const [username, setUsername] = useState(profile?.username || '');
-  const [theme, setTheme] = useState(profile?.theme || 'light');
+  const { token, logout } = useAuth(); // Get token and logout function
+  const [username, setUsername] = useState('');
+  const [memberSince, setMemberSince] = useState('');
+  const [theme, setTheme] = useState('light');
   const [stats, setStats] = useState({
     totalMoods: 0,
     totalChallenges: 0,
@@ -21,43 +23,68 @@ export function Profile({ onNavigate }: ProfileProps) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    loadStats();
-  }, []);
+    loadProfileAndStats();
+  }, [token]);
 
-  const loadStats = async () => {
-    if (!profile) return;
+  const loadProfileAndStats = async () => {
+    if (!token) return;
 
-    const [moodsRes, challengesRes, postsRes] = await Promise.all([
-      supabase.from('moods').select('id', { count: 'exact' }).eq('user_id', profile.id),
-      supabase.from('challenges').select('id', { count: 'exact' }).eq('user_id', profile.id),
-      supabase.from('community_posts').select('id', { count: 'exact' }).eq('user_id', profile.id),
-    ]);
+    try {
+      const res = await fetch(`${API_URL}/profile/stats`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
 
-    setStats({
-      totalMoods: moodsRes.count || 0,
-      totalChallenges: challengesRes.count || 0,
-      totalPosts: postsRes.count || 0,
-    });
+      if (!res.ok) {
+        throw new Error('Failed to load profile data');
+      }
+
+      const data = await res.json();
+
+      setUsername(data.username || '');
+      setMemberSince(new Date(data.created_at || '').toLocaleDateString());
+      setStats({
+        totalMoods: data.totalMoods,
+        totalChallenges: data.totalChallenges,
+        totalPosts: data.totalPosts,
+      });
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    }
   };
 
   const saveProfile = async () => {
-    if (!profile) return;
+    if (!token) return;
 
     setSaving(true);
-    await supabase
-      .from('profiles')
-      .update({
-        username,
-        theme,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', profile.id);
+    try {
+      const res = await fetch(`${API_URL}/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ username }),
+      });
 
-    setSaving(false);
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to save profile');
+      }
+
+      const data = await res.json();
+      setUsername(data.username); // Update state with saved username
+    } catch (error: any) {
+      console.error('Error saving profile:', error);
+      alert(`Error: ${error.message}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleSignOut = async () => {
-    await signOut();
+  const handleLogout = () => {
+    logout();
     onNavigate('landing');
   };
 
@@ -107,7 +134,7 @@ export function Profile({ onNavigate }: ProfileProps) {
                   {username}
                 </h2>
                 <p className="text-gray-600 text-sm">
-                  Member since {new Date(profile?.created_at || '').toLocaleDateString()}
+                  Member since {memberSince}
                 </p>
               </div>
             </div>
@@ -224,7 +251,7 @@ export function Profile({ onNavigate }: ProfileProps) {
               className="space-y-3"
             >
               <button
-                onClick={handleSignOut}
+                onClick={handleLogout}
                 className="w-full py-3 rounded-2xl bg-red-500 text-white font-medium hover:bg-red-600 transition-all shadow-md flex items-center justify-center space-x-2"
               >
                 <LogOut size={20} />

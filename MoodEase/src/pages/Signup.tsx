@@ -14,7 +14,7 @@ export function Signup({ onNavigate }: SignupProps) {
   const [username, setUsername] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signUp } = useAuth();
+  const { register } = useAuth(); // <-- FIX 1: Use 'register' from our context
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,8 +22,15 @@ export function Signup({ onNavigate }: SignupProps) {
     setLoading(true);
 
     try {
-      await signUp(email, password, username);
-      onNavigate('dashboard');
+      // FIX 2: Pass args in the correct order (username, email, password)
+      const errorMessage = await register(username, email);
+      
+      // FIX 3: Check for the returned error message
+      if (errorMessage) {
+        setError(errorMessage);
+      } else {
+        onNavigate('dashboard'); // Navigate on success
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to create account');
     } finally {

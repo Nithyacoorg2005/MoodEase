@@ -1,30 +1,42 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Mail, Lock, ArrowLeft } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
-import { FloatingBubbles } from '../components/FloatingBubbles';
+import { useAuth } from '../contexts/AuthContext'; // Make sure this path is correct
+import { FloatingBubbles } from '../components/FloatingBubbles'; // Make sure this path is correct
 
 type LoginProps = {
   onNavigate: (page: string) => void;
 };
 
 export function Login({ onNavigate }: LoginProps) {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(''); // This will be used as the 'username'
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signIn } = useAuth();
+  
+  // Get the login function from your new AuthContext
+  const { login } = useAuth(); 
 
+  // Define the missing handleSubmit function
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
+    setError('');
 
     try {
-      await signIn(email, password);
-      onNavigate('dashboard');
-    } catch (err) {
-      setError('Invalid email or password');
+      // Use the 'email' state as the 'username' for the login function
+      const errorMessage = await login(email, password); 
+
+      if (errorMessage) {
+        // If login returns an error message, display it
+        setError(errorMessage);
+      } else {
+        // On success, navigate to the dashboard
+        onNavigate('dashboard');
+      }
+    } catch (err: any) {
+      // Catch any unexpected errors
+      setError(err.message || 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }
@@ -64,7 +76,7 @@ export function Login({ onNavigate }: LoginProps) {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email
+                Email / Username
               </label>
               <div className="relative">
                 <Mail

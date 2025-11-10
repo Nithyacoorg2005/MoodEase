@@ -2,8 +2,17 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { BookOpen, Trophy, Sparkles, TrendingUp } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase, Mood } from '../lib/supabase';
 import { FloatingBubbles } from '../components/FloatingBubbles';
+
+// Define the Mood type, as it's no longer imported from supabase
+export interface Mood {
+  id: string;
+  user_id: string;
+  mood_value: number;
+  mood_emoji: string;
+  notes: string | null;
+  created_at: string;
+}
 
 type DashboardProps = {
   onNavigate: (page: string) => void;
@@ -27,8 +36,10 @@ const affirmations = [
   'Small steps lead to big changes',
 ];
 
+const API_URL = 'http://localhost:4000/api';
+
 export function Dashboard({ onNavigate }: DashboardProps) {
-  const { profile } = useAuth();
+  const { profile, token } = useAuth(); // Get profile and token
   const [selectedMood, setSelectedMood] = useState<number | null>(null);
   const [moodNote, setMoodNote] = useState('');
   const [recentMoods, setRecentMoods] = useState<Mood[]>([]);
@@ -39,45 +50,69 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   useEffect(() => {
     loadRecentMoods();
-  }, []);
+  }, [profile, token]); // Reload moods if profile or token changes
 
   const loadRecentMoods = async () => {
-    if (!profile) return;
+    if (!profile || !token) return;
 
-    const { data } = await supabase
-      .from('moods')
-      .select('*')
-      .eq('user_id', profile.id)
-      .order('created_at', { ascending: false })
-      .limit(7);
+    try {
+      const res = await fetch(`${API_URL}/moods`, {
+        headers: {
+          'Authorization': `Bearer ${token}`, // Send the token
+        },
+      });
 
-    if (data) {
-      setRecentMoods(data);
+      if (!res.ok) {
+        throw new Error('Failed to fetch moods');
+      }
+
+      const data: Mood[] = await res.json();
+      // The backend sends all moods, slice the 7 most recent
+      setRecentMoods(data.slice(0, 7));
+    } catch (error) {
+      console.error('Error loading moods:', error);
     }
   };
 
   const saveMood = async () => {
-    if (!profile || !selectedMood) return;
+    if (!profile || !token || !selectedMood) return;
 
     const moodData = moodEmojis.find((m) => m.value === selectedMood);
     if (!moodData) return;
 
-    await supabase.from('moods').insert({
-      user_id: profile.id,
-      mood_value: selectedMood,
-      mood_emoji: moodData.emoji,
-      notes: moodNote,
-    });
+    try {
+      const res = await fetch(`${API_URL}/moods`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`, // Send the token
+        },
+        body: JSON.stringify({
+          mood_value: selectedMood,
+          mood_emoji: moodData.emoji,
+          notes: moodNote,
+        }),
+      });
 
-    setSelectedMood(null);
-    setMoodNote('');
-    setShowMoodInput(false);
-    loadRecentMoods();
+      if (!res.ok) {
+        throw new Error('Failed to save mood');
+      }
+
+      setSelectedMood(null);
+      setMoodNote('');
+      setShowMoodInput(false);
+      loadRecentMoods(); // Refresh the list
+    } catch (error) {
+      console.error('Error saving mood:', error);
+    }
   };
 
   const averageMood =
     recentMoods.length > 0
-      ? (recentMoods.reduce((sum, m) => sum + m.mood_value, 0) / recentMoods.length).toFixed(1)
+      ? (
+          recentMoods.reduce((sum, m) => sum + m.mood_value, 0) /
+          recentMoods.length
+        ).toFixed(1)
       : '0';
 
   return (
@@ -91,6 +126,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           className="mb-8"
         >
           <h1 className="text-3xl md:text-4xl font-semibold text-gray-800 mb-2">
+            {/* Now this will work! */}
             Hey {profile?.username} 👋
           </h1>
           <p className="text-gray-600 text-lg font-light">
@@ -184,7 +220,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   </button>
                 </div>
                 <div className="flex gap-2">
-                  {recentMoods.slice(0, 7).reverse().map((mood, i) => (
+                  {/* Note: reversed the slice to show newest first */}
+                  {recentMoods.slice(0, 7).map((mood, i) => (
                     <div
                       key={i}
                       className="flex-1 bg-white/50 rounded-xl p-3 text-center"

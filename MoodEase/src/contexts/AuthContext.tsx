@@ -1,108 +1,121 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User } from '@supabase/supabase-js';
-import { supabase, Profile } from '../lib/supabase';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from 'react';
 
-type AuthContextType = {
-  user: User | null;
+// This is the shape of your user profile from the backend
+interface Profile {
+  id: string;
+  username: string;
+}
+
+interface AuthContextType {
   profile: Profile | null;
-  loading: boolean;
-  signUp: (email: string, password: string, username: string) => Promise<void>;
-  signIn: (email: string, password: string) => Promise<void>;
-  signOut: () => Promise<void>;
-};
+  token: string | null;
+  isLoading: boolean;
+  login: (username: string, pass: string) => Promise<string | void>;
+  register: (username: string, pass: string) => Promise<string | void>;
+  logout: () => void;
+}
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Define your backend API URL
+const API_URL = 'http://localhost:4000/api';
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // On initial load, check for a token in localStorage
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        loadProfile(session.user.id);
-      } else {
-        setLoading(false);
-      }
-    });
+    const storedToken = localStorage.getItem('mood-token');
+    const storedProfile = localStorage.getItem('mood-profile');
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      (async () => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await loadProfile(session.user.id);
-        } else {
-          setProfile(null);
-          setLoading(false);
-        }
-      })();
-    });
-
-    return () => subscription.unsubscribe();
+    if (storedToken && storedProfile) {
+      setToken(storedToken);
+      setProfile(JSON.parse(storedProfile));
+    }
+    setIsLoading(false);
   }, []);
 
-  const loadProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
+  // --- NEW LOGIN FUNCTION ---
+  const login = async (username: string, pass: string) => {
+    try {
+      const res = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password: pass }),
+      });
 
-    if (data) {
-      setProfile(data);
-    }
-    setLoading(false);
-  };
+      const data = await res.json();
 
-  const signUp = async (email: string, password: string, username: string) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to login');
+      }
 
-    if (error) throw error;
-
-    if (data.user) {
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: data.user.id,
-          username,
-          avatar_url: '',
-          theme: 'light',
-        });
-
-      if (profileError) throw profileError;
+      // Save token and profile to state and localStorage
+      setToken(data.token);
+      setProfile(data.profile);
+      localStorage.setItem('mood-token', data.token);
+      localStorage.setItem('mood-profile', JSON.stringify(data.profile));
+    } catch (error: any) {
+      console.error('Login error:', error.message);
+      return error.message; // Return the error message to the component
     }
   };
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+  // --- NEW REGISTER FUNCTION ---
+  const register = async (username: string, pass: string) => {
+    try {
+      const res = await fetch(`${API_URL}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password: pass }),
+      });
 
-    if (error) throw error;
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to register');
+      }
+
+      // Save token and profile to state and localStorage
+      setToken(data.token);
+      setProfile(data.profile);
+      localStorage.setItem('mood-token', data.token);
+      localStorage.setItem('mood-profile', JSON.stringify(data.profile));
+    } catch (error: any) {
+      console.error('Register error:', error.message);
+      return error.message; // Return the error message to the component
+    }
   };
 
-  const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+  // --- NEW LOGOUT FUNCTION ---
+  const logout = () => {
+    setToken(null);
+    setProfile(null);
+    localStorage.removeItem('mood-token');
+    localStorage.removeItem('mood-profile');
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signUp, signIn, signOut }}>
-      {children}
+    <AuthContext.Provider
+      value={{ profile, token, isLoading, login, register, logout }}
+    >
+      {!isLoading && children}
     </AuthContext.Provider>
   );
 }
 
-export function useAuth() {
+export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-}
+};
