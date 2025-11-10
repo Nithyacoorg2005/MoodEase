@@ -6,24 +6,30 @@ import {
   ReactNode,
 } from 'react';
 
-// This is the shape of your user profile from the backend
+// 1. FIX: Add 'email' to the Profile interface
 interface Profile {
   id: string;
   username: string;
+  email: string; // This was missing
 }
 
 interface AuthContextType {
   profile: Profile | null;
   token: string | null;
   isLoading: boolean;
-  login: (username: string, pass: string) => Promise<string | void>;
-  register: (username: string, pass: string) => Promise<string | void>;
+  // 2. FIX: Login takes 'email', not 'username'
+  login: (email: string, pass: string) => Promise<string | void>;
+  // 3. FIX: Register takes all three fields
+  register: (
+    username: string,
+    email: string,
+    pass: string
+  ) => Promise<string | void>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Define your backend API URL
 const API_URL = 'http://localhost:4000/api';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -31,7 +37,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // On initial load, check for a token in localStorage
   useEffect(() => {
     const storedToken = localStorage.getItem('mood-token');
     const storedProfile = localStorage.getItem('mood-profile');
@@ -43,13 +48,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(false);
   }, []);
 
-  // --- NEW LOGIN FUNCTION ---
-  const login = async (username: string, pass: string) => {
+     // --- CORRECT LOGIN FUNCTION ---
+  const login = async (email: string, pass: string) => {
     try {
+      // FIX: Use backticks (`) instead of single quotes (')
       const res = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password: pass }),
+        body: JSON.stringify({ email, password: pass }),
       });
 
       const data = await res.json();
@@ -58,24 +64,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(data.error || 'Failed to login');
       }
 
-      // Save token and profile to state and localStorage
       setToken(data.token);
       setProfile(data.profile);
       localStorage.setItem('mood-token', data.token);
       localStorage.setItem('mood-profile', JSON.stringify(data.profile));
     } catch (error: any) {
       console.error('Login error:', error.message);
-      return error.message; // Return the error message to the component
+      return error.message;
     }
   };
 
-  // --- NEW REGISTER FUNCTION ---
-  const register = async (username: string, pass: string) => {
+
+  // --- CORRECT REGISTER FUNCTION ---
+  const register = async (username: string, email: string, pass: string) => {
     try {
       const res = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password: pass }),
+        // 5. FIX: Send 'username', 'email', and 'password'
+        body: JSON.stringify({ username, email, password: pass }),
       });
 
       const data = await res.json();
@@ -84,14 +91,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(data.error || 'Failed to register');
       }
 
-      // Save token and profile to state and localStorage
       setToken(data.token);
       setProfile(data.profile);
       localStorage.setItem('mood-token', data.token);
       localStorage.setItem('mood-profile', JSON.stringify(data.profile));
     } catch (error: any) {
       console.error('Register error:', error.message);
-      return error.message; // Return the error message to the component
+      return error.message;
     }
   };
 

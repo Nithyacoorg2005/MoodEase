@@ -1,72 +1,126 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Heart, MessageCircle, Send, Trash2 } from 'lucide-react';
+import { MessageCircle, Send, Trash2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase, CommunityPost } from '../lib/supabase';
 import { FloatingBubbles } from '../components/FloatingBubbles';
 
-type PostWithProfile = CommunityPost & {
-  profiles: { username: string; avatar_url: string } | null;
-};
+// Define the Post type locally. Notice 'username' is now top-level
+export interface CommunityPost {
+  id: string;
+  user_id: string;
+  content: string;
+  reactions: { [key: string]: number };
+  created_at: string;
+  username: string; // The backend query now joins this directly
+}
+
+const API_URL = 'http://localhost:4000/api';
 
 export function Community() {
-  const { profile } = useAuth();
-  const [posts, setPosts] = useState<PostWithProfile[]>([]);
+  const { profile, token } = useAuth(); // Get profile and token
+  const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [newPost, setNewPost] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    loadPosts();
-  }, []);
+    // Only load posts if we have a token
+    if (token) {
+      loadPosts();
+    }
+  }, [token]); // Load when token becomes available
 
   const loadPosts = async () => {
-    const { data } = await supabase
-      .from('community_posts')
-      .select(`
-        *,
-        profiles (username, avatar_url)
-      `)
-      .order('created_at', { ascending: false })
-      .limit(50);
-
-    if (data) {
-      setPosts(data as PostWithProfile[]);
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_URL}/posts`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (!res.ok) {
+        throw new Error('Failed to load posts');
+      }
+      const data: CommunityPost[] = await res.json();
+      setPosts(data);
+    } catch (error) {
+      console.error('Error loading posts:', error);
     }
   };
 
   const createPost = async () => {
-    if (!profile || !newPost.trim()) return;
+    if (!profile || !token || !newPost.trim()) return;
 
     setLoading(true);
-    await supabase.from('community_posts').insert({
-      user_id: profile.id,
-      content: newPost,
-      reactions: {},
-    });
+    try {
+      const res = await fetch(`${API_URL}/posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ content: newPost }),
+      });
 
-    setNewPost('');
-    setLoading(false);
-    loadPosts();
+      if (!res.ok) {
+        throw new Error('Failed to create post');
+      }
+
+      const createdPost: CommunityPost = await res.json();
+
+      // Add new post to the top of the list
+      setPosts([createdPost, ...posts]);
+      setNewPost('');
+    } catch (error) {
+      console.error('Error creating post:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const deletePost = async (postId: string) => {
-    await supabase.from('community_posts').delete().eq('id', postId);
-    loadPosts();
+    if (!token) return;
+    try {
+      await fetch(`${API_URL}/posts/${postId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      // Filter out the deleted post from the UI
+      setPosts(posts.filter((p) => p.id !== postId));
+    } catch (error) {
+      console.error('Error deleting post:', error);
+    }
   };
 
-  const toggleReaction = async (post: PostWithProfile, emoji: string) => {
-    if (!profile) return;
+  const toggleReaction = async (post: CommunityPost, emoji: string) => {
+    if (!profile || !token) return;
 
-    const reactions = post.reactions || {};
-    const currentCount = reactions[emoji] || 0;
-    const newReactions = { ...reactions, [emoji]: currentCount + 1 };
+    try {
+      const res = await fetch(`${API_URL}/posts/${post.id}/react`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ emoji }),
+      });
 
-    await supabase
-      .from('community_posts')
-      .update({ reactions: newReactions })
-      .eq('id', post.id);
+      if (!res.ok) {
+        throw new Error('Failed to react');
+      }
 
-    loadPosts();
+      const updatedReactions = await res.json();
+
+      // Update the reactions for that one post in the UI
+      setPosts(
+        posts.map((p) =>
+          p.id === post.id ? { ...p, reactions: updatedReactions } : p
+        )
+      );
+    } catch (error) {
+      console.error('Error toggling reaction:', error);
+    }
   };
 
   const reactionEmojis = ['❤️', '🙏', '💪', '🌟', '🤗'];
@@ -134,11 +188,12 @@ export function Community() {
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center space-x-3">
                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-semibold">
-                      {post.profiles?.username?.[0]?.toUpperCase() || '?'}
+                      {/* Use the new 'username' field */}
+                      {post.username?.[0]?.toUpperCase() || '?'}
                     </div>
                     <div>
                       <p className="font-semibold text-gray-800">
-                        {post.profiles?.username || 'Anonymous'}
+                        {post.username || 'Anonymous'}
                       </p>
                       <p className="text-xs text-gray-500">
                         {new Date(post.created_at).toLocaleDateString('en-US', {

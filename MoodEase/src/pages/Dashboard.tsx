@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { BookOpen, Trophy, Sparkles, TrendingUp } from 'lucide-react';
+import { BookOpen, Trophy, Sparkles, TrendingUp, CheckCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { FloatingBubbles } from '../components/FloatingBubbles';
 
-// Define the Mood type, as it's no longer imported from supabase
+// Define the Mood type
 export interface Mood {
   id: string;
   user_id: string;
@@ -32,14 +32,12 @@ const affirmations = [
   'You deserve happiness and peace',
   'Your feelings are valid',
   'Progress, not perfection',
-  'You are enough, just as you are',
-  'Small steps lead to big changes',
 ];
 
 const API_URL = 'http://localhost:4000/api';
 
 export function Dashboard({ onNavigate }: DashboardProps) {
-  const { profile, token } = useAuth(); // Get profile and token
+  const { profile, token } = useAuth();
   const [selectedMood, setSelectedMood] = useState<number | null>(null);
   const [moodNote, setMoodNote] = useState('');
   const [recentMoods, setRecentMoods] = useState<Mood[]>([]);
@@ -47,28 +45,56 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     affirmations[Math.floor(Math.random() * affirmations.length)]
   );
   const [showMoodInput, setShowMoodInput] = useState(false);
+  const [loggedToday, setLoggedToday] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
-    loadRecentMoods();
-  }, [profile, token]); // Reload moods if profile or token changes
+    if (token) {
+      loadRecentMoods();
+    }
+  }, [profile, token]);
 
   const loadRecentMoods = async () => {
     if (!profile || !token) return;
 
     try {
       const res = await fetch(`${API_URL}/moods`, {
-        headers: {
-          'Authorization': `Bearer ${token}`, // Send the token
-        },
+        headers: { 'Authorization': `Bearer ${token}` },
       });
+      if (!res.ok) throw new Error('Failed to fetch moods');
+      const data: Mood[] = await res.json(); // Data is newest-to-oldest
+      
+      const today = new Date().toDateString();
+      const uniqueDateMoods: Mood[] = [];
+      const seenDates = new Set<string>();
+      let hasLoggedToday = false;
 
-      if (!res.ok) {
-        throw new Error('Failed to fetch moods');
+      // --- FIX: Filter for unique dates ---
+      for (const mood of data) {
+        const dateString = new Date(mood.created_at).toDateString();
+
+        // Check for today's log
+        if (dateString === today) {
+          hasLoggedToday = true;
+        }
+        
+        // Add to recent moods list if date is new
+        if (!seenDates.has(dateString)) {
+          uniqueDateMoods.push(mood);
+          seenDates.add(dateString);
+        }
       }
+      
+      // Set the state with the first 7 unique daily moods (newest first)
+      setRecentMoods(uniqueDateMoods.slice(0, 7));
+      
+      // Update logged today state
+      setLoggedToday(hasLoggedToday);
+      if (hasLoggedToday) {
+        setShowMoodInput(false); 
+      }
+      // --- END FIX ---
 
-      const data: Mood[] = await res.json();
-      // The backend sends all moods, slice the 7 most recent
-      setRecentMoods(data.slice(0, 7));
     } catch (error) {
       console.error('Error loading moods:', error);
     }
@@ -79,13 +105,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
     const moodData = moodEmojis.find((m) => m.value === selectedMood);
     if (!moodData) return;
+    
+    setSaveError(''); 
 
     try {
       const res = await fetch(`${API_URL}/moods`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`, // Send the token
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           mood_value: selectedMood,
@@ -94,16 +122,24 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         }),
       });
 
-      if (!res.ok) {
-        throw new Error('Failed to save mood');
+      if (res.status === 409) {
+        const data = await res.json();
+        setSaveError(data.error || "You've already logged today.");
+        setLoggedToday(true);
+        setShowMoodInput(false);
+        return;
       }
+
+      if (!res.ok) throw new Error('Failed to save mood');
 
       setSelectedMood(null);
       setMoodNote('');
+      setLoggedToday(true);
       setShowMoodInput(false);
       loadRecentMoods(); // Refresh the list
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving mood:', error);
+      setSaveError(error.message || 'Failed to save mood.');
     }
   };
 
@@ -126,7 +162,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           className="mb-8"
         >
           <h1 className="text-3xl md:text-4xl font-semibold text-gray-800 mb-2">
-            {/* Now this will work! */}
             Hey {profile?.username} 👋
           </h1>
           <p className="text-gray-600 text-lg font-light">
@@ -145,7 +180,17 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               Track Your Mood
             </h2>
 
-            {!showMoodInput ? (
+            {loggedToday ? (
+              <div className="text-center p-6 bg-purple-50 rounded-2xl">
+                <CheckCircle className="text-purple-500 w-12 h-12 mx-auto mb-3" />
+                <h3 className="font-semibold text-gray-700">
+                  Mood logged for today!
+                </h3>
+                <p className="text-gray-500 text-sm">
+                  Great job. Come back tomorrow to log again.
+                </p>
+              </div>
+            ) : !showMoodInput ? (
               <button
                 onClick={() => setShowMoodInput(true)}
                 className="w-full py-4 rounded-2xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium hover:from-purple-600 hover:to-pink-600 transition-all shadow-md"
@@ -171,46 +216,49 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   ))}
                 </div>
 
-                {selectedMood && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                  >
-                    <textarea
-                      value={moodNote}
-                      onChange={(e) => setMoodNote(e.target.value)}
-                      placeholder="How are you feeling? (optional)"
-                      className="w-full p-4 rounded-2xl border border-gray-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none transition-all bg-white/50 resize-none"
-                      rows={3}
-                    />
-                    <div className="flex gap-2 mt-2">
-                      <button
-                        onClick={saveMood}
-                        className="flex-1 py-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium hover:from-purple-600 hover:to-pink-600 transition-all"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowMoodInput(false);
-                          setSelectedMood(null);
-                          setMoodNote('');
-                        }}
-                        className="px-4 py-2 rounded-xl bg-gray-200 text-gray-700 hover:bg-gray-300 transition-all"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                >
+                  <textarea
+                    value={moodNote}
+                    onChange={(e) => setMoodNote(e.target.value)}
+                    placeholder="How are you feeling? (optional)"
+                    className="w-full p-4 rounded-2xl border border-gray-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none transition-all bg-white/50 resize-none"
+                    rows={3}
+                  />
+                  {saveError && (
+                    <p className="text-sm text-red-500 mt-2">{saveError}</p>
+                  )}
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={saveMood}
+                      disabled={!selectedMood}
+                      className="flex-1 py-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium hover:from-purple-600 hover:to-pink-600 transition-all disabled:opacity-50"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowMoodInput(false);
+                        setSelectedMood(null);
+                        setMoodNote('');
+                      }}
+                      className="px-4 py-2 rounded-xl bg-gray-200 text-gray-700 hover:bg-gray-300 transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </motion.div>
               </div>
             )}
+
 
             {recentMoods.length > 0 && (
               <div className="mt-6">
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="text-sm font-medium text-gray-700">
-                    Weekly Overview
+                    Recent Overview
                   </h3>
                   <button
                     onClick={() => onNavigate('tracker')}
@@ -220,18 +268,21 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   </button>
                 </div>
                 <div className="flex gap-2">
-                  {/* Note: reversed the slice to show newest first */}
-                  {recentMoods.slice(0, 7).map((mood, i) => (
+                  {/* --- FIX: Reverse the array to show oldest first --- */}
+                  {recentMoods.slice(0, 7).reverse().map((mood) => (
                     <div
-                      key={i}
+                      key={mood.id} // Use mood.id as key
                       className="flex-1 bg-white/50 rounded-xl p-3 text-center"
                     >
                       <div className="text-2xl mb-1">{mood.mood_emoji}</div>
+                      
+                      {/* --- FIX: Use 'weekday' to show Mon, Tue, etc. --- */}
                       <div className="text-xs text-gray-500">
                         {new Date(mood.created_at).toLocaleDateString('en-US', {
                           weekday: 'short',
                         })}
                       </div>
+                      
                     </div>
                   ))}
                 </div>

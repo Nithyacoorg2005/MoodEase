@@ -2,8 +2,17 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Trophy, Flame, Award, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase, Challenge } from '../lib/supabase';
 import { FloatingBubbles } from '../components/FloatingBubbles';
+
+// Define the Challenge type locally
+export interface Challenge {
+  id: string;
+  user_id: string;
+  challenge_type: string;
+  streak_count: number;
+  last_completed: string | null;
+  badges: string[];
+}
 
 const challengeTypes = [
   {
@@ -45,44 +54,37 @@ const badges = [
   { name: 'Champion', icon: '🏆', requirement: 60 },
 ];
 
+const API_URL = 'http://localhost:4000/api';
+
 export function Challenges() {
-  const { profile } = useAuth();
+  const { profile, token } = useAuth(); // Get token
   const [challenges, setChallenges] = useState<Challenge[]>([]);
 
   useEffect(() => {
     loadChallenges();
-  }, []);
+  }, [profile, token]); // Load when auth is ready
 
   const loadChallenges = async () => {
-    if (!profile) return;
+    if (!profile || !token) return;
 
-    const { data } = await supabase
-      .from('challenges')
-      .select('*')
-      .eq('user_id', profile.id);
-
-    if (data) {
+    try {
+      const res = await fetch(`${API_URL}/challenges`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (!res.ok) {
+        throw new Error('Failed to load challenges');
+      }
+      const data: Challenge[] = await res.json();
       setChallenges(data);
-    } else {
-      await initializeChallenges();
+    } catch (error) {
+      console.error('Error loading challenges:', error);
     }
   };
 
-  const initializeChallenges = async () => {
-    if (!profile) return;
-
-    const newChallenges = challengeTypes.map((type) => ({
-      user_id: profile.id,
-      challenge_type: type.id,
-      streak_count: 0,
-      badges: [],
-    }));
-
-    await supabase.from('challenges').insert(newChallenges);
-    loadChallenges();
-  };
-
   const completeChallenge = async (challengeId: string) => {
+    if (!token) return;
     const challenge = challenges.find((c) => c.id === challengeId);
     if (!challenge) return;
 
@@ -101,17 +103,40 @@ export function Challenges() {
     const earnedBadges = badges
       .filter((b) => newStreak >= b.requirement)
       .map((b) => b.name);
+    
+    const lastCompletedISO = now.toISOString();
 
-    await supabase
-      .from('challenges')
-      .update({
-        streak_count: newStreak,
-        last_completed: now.toISOString(),
-        badges: earnedBadges,
-      })
-      .eq('id', challengeId);
+    try {
+      // Update the backend
+      const res = await fetch(`${API_URL}/challenges/${challengeId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          streak_count: newStreak,
+          last_completed: lastCompletedISO,
+          badges: earnedBadges,
+        }),
+      });
 
-    loadChallenges();
+      if (!res.ok) {
+        throw new Error('Failed to update challenge');
+      }
+      
+      // Update the UI state immediately
+      setChallenges(
+        challenges.map((c) =>
+          c.id === challengeId
+            ? { ...c, streak_count: newStreak, last_completed: lastCompletedISO, badges: earnedBadges }
+            : c
+        )
+      );
+
+    } catch (error) {
+      console.error('Error completing challenge:', error);
+    }
   };
 
   const canCompleteToday = (challenge: Challenge) => {
@@ -120,9 +145,9 @@ export function Challenges() {
     const lastCompleted = new Date(challenge.last_completed);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    lastCompleted.setHours(0, 0, 0, 0);
-
-    return lastCompleted < today;
+    
+    // Check if lastCompleted was before the start of today
+    return lastCompleted.getTime() < today.getTime();
   };
 
   const totalStreak = challenges.reduce((sum, c) => sum + c.streak_count, 0);
@@ -189,7 +214,7 @@ export function Challenges() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {challengeTypes.map((type, index) => {
               const challenge = challenges.find((c) => c.challenge_type === type.id);
-              const canComplete = challenge ? canCompleteToday(challenge) : true;
+              const canComplete = challenge ? canCompleteToday(challenge) : false;
 
               return (
                 <motion.div
@@ -218,7 +243,7 @@ export function Challenges() {
                   </p>
                   <button
                     onClick={() => challenge && completeChallenge(challenge.id)}
-                    disabled={!canComplete}
+                    disabled={!challenge || !canComplete}
                     className={`w-full py-2 rounded-xl flex items-center justify-center space-x-2 transition-all ${
                       canComplete
                         ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600'

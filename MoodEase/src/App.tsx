@@ -12,14 +12,19 @@ import { Community } from './pages/Community';
 import { Profile } from './pages/Profile';
 
 function AppContent() {
-  const { user, loading } = useAuth();
-  const [currentPage, setCurrentPage] = useState<string>(user ? 'dashboard' : 'landing');
+  const { profile, isLoading } = useAuth();
+  
+  // You only need to set the state once
+  const [currentPage, setCurrentPage] = useState<string>(
+    profile ? 'dashboard' : 'landing'
+  );
 
   const handleNavigate = (page: string) => {
     setCurrentPage(page);
   };
 
-  if (loading) {
+// --- FIX 3: Use 'isLoading' ---
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 flex items-center justify-center">
         <div className="text-center">
@@ -30,7 +35,7 @@ function AppContent() {
     );
   }
 
-  if (!user) {
+ if (!profile) {
     if (currentPage === 'login') {
       return <Login onNavigate={handleNavigate} />;
     }

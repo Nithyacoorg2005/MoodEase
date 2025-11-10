@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Wind, BookOpen, Music, Gamepad2, X } from 'lucide-react';
+import { Wind, BookOpen, Music, Gamepad2, X, Play, Pause } from 'lucide-react';
 import { FloatingBubbles } from '../components/FloatingBubbles';
 
 const breathingPatterns = [
@@ -20,9 +20,42 @@ const journalPrompts = [
 
 export function Mindfulness() {
   const [activeActivity, setActiveActivity] = useState<string | null>(null);
-  const [breathingPhase, setBreathingPhase] = useState<'inhale' | 'hold' | 'exhale'>('inhale');
+  
+  // --- Breathing State ---
+  const [pattern, setPattern] = useState(breathingPatterns[0]);
+  const [breathingPhase, setBreathingPhase] = useState<'idle' | 'inhale' | 'hold' | 'exhale'>('idle');
+  const [breathingCycles, setBreathingCycles] = useState(0);
+
+  // --- Journal State ---
   const [journalText, setJournalText] = useState('');
-  const [currentPrompt] = useState(journalPrompts[Math.floor(Math.random() * journalPrompts.length)]);
+  const [currentPrompt, setCurrentPrompt] = useState('');
+  
+  // --- Meditation State ---
+  const [activeSound, setActiveSound] = useState<string | null>(null);
+
+  // Effect to handle modal opening
+  useEffect(() => {
+    // When modal opens
+    if (activeActivity) {
+      // Reset breathing
+      setBreathingPhase('idle');
+      setBreathingCycles(0);
+      setPattern(breathingPatterns[0]);
+      
+      // Set new journal prompt
+      setCurrentPrompt(journalPrompts[Math.floor(Math.random() * journalPrompts.length)]);
+      setJournalText('');
+      
+      // Stop sounds
+      setActiveSound(null);
+    }
+  }, [activeActivity]);
+
+  const handleStartBreathing = (selectedPattern: typeof breathingPatterns[0]) => {
+    setPattern(selectedPattern);
+    setBreathingCycles(selectedPattern.cycles); // Set number of cycles
+    setBreathingPhase('inhale'); // Start the cycle
+  };
 
   const activities = [
     {
@@ -130,35 +163,53 @@ export function Mindfulness() {
                 {activeActivity === 'breathing' && (
                   <div className="text-center py-12">
                     <motion.div
+                      key={breathingPhase} // Re-run animation when phase changes
                       animate={{
-                        scale: breathingPhase === 'inhale' ? 1.5 : breathingPhase === 'hold' ? 1.5 : 1,
+                        // Animate scale based on phase
+                        scale: breathingPhase === 'inhale' || breathingPhase === 'hold' ? 1.5 : 1,
                       }}
-                      transition={{ duration: 4, ease: 'easeInOut' }}
+                      transition={{
+                        // Use the correct duration for the current phase
+                        duration:
+                          breathingPhase === 'inhale' ? pattern.inhale :
+                          breathingPhase === 'hold' ? pattern.hold :
+                          breathingPhase === 'exhale' ? pattern.exhale : 0,
+                        ease: 'easeInOut',
+                      }}
                       onAnimationComplete={() => {
-                        setBreathingPhase(
-                          breathingPhase === 'inhale'
-                            ? 'hold'
-                            : breathingPhase === 'hold'
-                            ? 'exhale'
-                            : 'inhale'
-                        );
+                        // Logic to cycle through phases
+                        if (breathingPhase === 'inhale') {
+                          setBreathingPhase('hold');
+                        } else if (breathingPhase === 'hold') {
+                          setBreathingPhase('exhale');
+                        } else if (breathingPhase === 'exhale') {
+                          if (breathingCycles > 1) {
+                            setBreathingCycles(breathingCycles - 1);
+                            setBreathingPhase('inhale');
+                          } else {
+                            setBreathingPhase('idle'); // Finished
+                          }
+                        }
                       }}
                       className="w-32 h-32 mx-auto rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 mb-8"
                     />
                     <h3 className="text-3xl font-semibold text-gray-800 mb-4 capitalize">
-                      {breathingPhase}
+                      {breathingPhase === 'idle' ? 'Select a pattern' : breathingPhase}
+                      {breathingPhase !== 'idle' && ` (${pattern[breathingPhase]}s)`}
                     </h3>
-                    <p className="text-gray-600">
-                      Follow the circle and breathe deeply
+                    <p className="text-gray-600 h-6">
+                      {breathingPhase === 'idle' ? ' ' : `Cycles left: ${breathingCycles}`}
                     </p>
                     <div className="mt-8 space-y-2">
-                      {breathingPatterns.map((pattern) => (
-                        <div
-                          key={pattern.name}
-                          className="bg-gray-50 rounded-xl p-3 text-sm text-gray-600"
+                      {breathingPatterns.map((p) => (
+                        <button
+                          key={p.name}
+                          onClick={() => handleStartBreathing(p)}
+                          disabled={breathingPhase !== 'idle'}
+                          className="w-full text-left bg-gray-50 rounded-xl p-3 text-sm text-gray-600 hover:bg-gray-100 disabled:opacity-50"
                         >
-                          <span className="font-medium">{pattern.name}:</span> Inhale {pattern.inhale}s, Hold {pattern.hold}s, Exhale {pattern.exhale}s
-                        </div>
+                          <span className="font-medium">{p.name}:</span> Inhale {p.inhale}s, Hold {p.hold}s, Exhale {p.exhale}s
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -175,7 +226,16 @@ export function Mindfulness() {
                       placeholder="Start writing your thoughts..."
                       className="w-full h-64 p-4 rounded-2xl border border-gray-200 focus:border-purple-400 focus:ring-2 focus:ring-purple-100 outline-none transition-all resize-none"
                     />
-                    <button className="mt-4 w-full py-3 rounded-2xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium hover:from-purple-600 hover:to-pink-600 transition-all">
+                    <button 
+                      // --- ADDED ONCLICK ---
+                      onClick={() => {
+                        // Here you would save to your backend
+                        alert('Entry saved! (Feature in progress)');
+                        setJournalText('');
+                        setActiveActivity(null);
+                      }}
+                      className="mt-4 w-full py-3 rounded-2xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium hover:from-purple-600 hover:to-pink-600 transition-all"
+                    >
                       Save Entry
                     </button>
                   </div>
@@ -187,7 +247,7 @@ export function Mindfulness() {
                       <Music className="text-white" size={48} />
                     </div>
                     <h3 className="text-2xl font-semibold text-gray-800 mb-4">
-                      Peaceful Sounds
+                      {activeSound ? `Playing: ${activeSound}` : 'Peaceful Sounds'}
                     </h3>
                     <p className="text-gray-600 mb-8">
                       Close your eyes and listen to calming nature sounds
@@ -196,7 +256,17 @@ export function Mindfulness() {
                       {['Rain', 'Ocean', 'Forest', 'Night'].map((sound) => (
                         <button
                           key={sound}
-                          className="py-4 rounded-2xl bg-gray-50 hover:bg-gray-100 transition-colors text-gray-700 font-medium"
+                          // --- ADDED ONCLICK ---
+                          onClick={() => {
+                            // Here you would add logic to play audio
+                            setActiveSound(sound);
+                            alert(`Playing ${sound} sounds... (Feature in progress)`);
+                          }}
+                          className={`py-4 rounded-2xl transition-colors text-gray-700 font-medium ${
+                            activeSound === sound
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-gray-50 hover:bg-gray-100'
+                          }`}
                         >
                           {sound}
                         </button>
@@ -220,6 +290,8 @@ export function Mindfulness() {
                       {['Memory Match', 'Color Sort', 'Word Find', 'Puzzle'].map((game) => (
                         <button
                           key={game}
+                          // --- ADDED ONCLICK ---
+                          onClick={() => alert(`${game} is not implemented yet.`)}
                           className="py-4 rounded-2xl bg-gray-50 hover:bg-gray-100 transition-colors text-gray-700 font-medium"
                         >
                           {game}

@@ -23,7 +23,7 @@ export function Signup({ onNavigate }: SignupProps) {
 
     try {
       // FIX 2: Pass args in the correct order (username, email, password)
-      const errorMessage = await register(username, email);
+      const errorMessage = await register(username, email, password);
       
       // FIX 3: Check for the returned error message
       if (errorMessage) {

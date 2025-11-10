@@ -55,11 +55,12 @@ export function MoodTracker() {
   const [chartData, setChartData] = useState<any>(null);
 
   useEffect(() => {
-    loadMoods();
-  }, [profile, token]); // Load once when auth is ready
+    if (token) {
+      loadMoods();
+    }
+  }, [profile, token]);
 
   useEffect(() => {
-    // This effect runs when 'allMoods' or 'filter' changes
     filterAndFormatData();
   }, [allMoods, filter]);
 
@@ -68,15 +69,11 @@ export function MoodTracker() {
 
     try {
       const res = await fetch(`${API_URL}/moods`, {
-        headers: {
-          'Authorization': `Bearer ${token}`, // Send the token
-        },
+        headers: { 'Authorization': `Bearer ${token}` },
       });
-      if (!res.ok) {
-        throw new Error('Failed to fetch moods');
-      }
+      if (!res.ok) throw new Error('Failed to fetch moods');
       const data: Mood[] = await res.json();
-      setAllMoods(data); // Store all moods
+      setAllMoods(data);
     } catch (error) {
       console.error('Error loading moods:', error);
     }
@@ -91,17 +88,32 @@ export function MoodTracker() {
     } else if (filter === 'month') {
       startDate.setDate(now.getDate() - 30);
     } else {
-      startDate.setFullYear(now.getFullYear() - 10); // 'all' = 10 years
+      startDate.setFullYear(now.getFullYear() - 10);
     }
 
-    // Filter the moods based on the date range
-    const newFilteredMoods = allMoods.filter(
+    const moodsInRange = allMoods.filter(
       (mood) => new Date(mood.created_at) >= startDate
     );
-    setFilteredMoods(newFilteredMoods); // Update state for list
+    
+    // Create a unique list for display (one entry per day)
+    const uniqueDateMoods: Mood[] = [];
+    const seenDates = new Set<string>();
 
-    // Format data for the chart (needs to be oldest-to-newest)
-    formatChartData(newFilteredMoods);
+    // Since moods are sorted newest-to-oldest, this keeps the newest one for each day
+    for (const mood of moodsInRange) {
+      const dateString = new Date(mood.created_at).toDateString();
+      if (!seenDates.has(dateString)) {
+        uniqueDateMoods.push(mood);
+        seenDates.add(dateString);
+      }
+    }
+    
+    // --- THIS IS THE FIX ---
+    // Pass the UNIQUE list to the chart, not the full 'moodsInRange'
+    formatChartData(uniqueDateMoods);
+    
+    // Pass the UNIQUE list to the list component
+    setFilteredMoods(uniqueDateMoods);
   };
 
   const formatChartData = (data: Mood[]) => {
@@ -136,12 +148,9 @@ export function MoodTracker() {
     try {
       await fetch(`${API_URL}/moods/${id}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`, // Send the token
-        },
+        headers: { 'Authorization': `Bearer ${token}` },
       });
-      // Reload all moods from the server
-      loadMoods();
+      loadMoods(); // Reload all moods
     } catch (error) {
       console.error('Error deleting mood:', error);
     }
@@ -197,7 +206,6 @@ export function MoodTracker() {
             </div>
             <p className="text-sm text-gray-600">Average Mood</p>
           </div>
-
           <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 shadow-lg">
             <div className="flex items-center justify-between mb-2">
               <Calendar className="text-pink-600" size={24} />
@@ -207,7 +215,6 @@ export function MoodTracker() {
             </div>
             <p className="text-sm text-gray-600">Total Entries</p>
           </div>
-
           <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 shadow-lg">
             <div className="flex items-center justify-between mb-2">
               <span className="text-3xl">{mostFrequentMood?.[0] || '😊'}</span>
@@ -313,15 +320,6 @@ export function MoodTracker() {
                               month: 'short',
                               day: 'numeric',
                               year: 'numeric',
-                            }
-                          )}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {new Date(mood.created_at).toLocaleTimeString(
-                            'en-US',
-                            {
-                              hour: 'numeric',
-                              minute: '2-digit',
                             }
                           )}
                         </span>
