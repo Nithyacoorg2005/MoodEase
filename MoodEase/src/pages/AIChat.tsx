@@ -6,7 +6,7 @@ import { FloatingBubbles } from '../components/FloatingBubbles';
 // --- CONFIGURATION ---
 // 1. Go to openrouter.ai to get a free key
 // 2. Paste it here inside the quotes
-const OPENROUTER_API_KEY = "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"; 
+const OPENROUTER_API_KEY = "API KEY"; 
 
 const SYSTEM_PROMPT = `You are MooDEase, a compassionate, empathetic, and friendly mental wellness AI companion. 
 Your goal is to listen, offer comfort, and provide gentle, non-medical advice. 
