@@ -1,4 +1,4 @@
-import { Home, BarChart3, Sparkles, User } from 'lucide-react';
+import { Home, BarChart3, Sparkles, User,Bot,Film} from 'lucide-react';
 import { motion } from 'framer-motion';
 
 type NavbarProps = {
@@ -7,12 +7,15 @@ type NavbarProps = {
 };
 
 export function Navbar({ currentPage, onNavigate }: NavbarProps) {
-  const navItems = [
-    { id: 'dashboard', icon: Home, label: 'Home' },
-    { id: 'tracker', icon: BarChart3, label: 'Tracker' },
-    { id: 'mindfulness', icon: Sparkles, label: 'Mindfulness' },
-    { id: 'profile', icon: User, label: 'Profile' },
-  ];
+const navItems = [
+  { id: 'dashboard', icon: Home, label: 'Home' },
+  { id: 'tracker', icon: BarChart3, label: 'Tracker' },
+  { id: 'reels', icon: Film, label: 'Motivational Videos' },
+  { id: 'mindfulness', icon: Sparkles, label: 'Mindfulness' },
+  { id: 'chat', icon: Bot, label: 'AI Chat' },
+  {id:'community',icon:Bot,label:'Community'}, // Chat comes before Profile
+  { id: 'profile', icon: User, label: 'Profile' },
+];
 
   return (
     <nav className="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-md shadow-sm z-50">

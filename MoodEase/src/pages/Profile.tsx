@@ -171,35 +171,7 @@ export function Profile({ onNavigate }: ProfileProps) {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Theme
-                </label>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setTheme('light')}
-                    className={`flex-1 py-3 rounded-2xl border transition-all flex items-center justify-center space-x-2 ${
-                      theme === 'light'
-                        ? 'border-purple-400 bg-purple-50 text-purple-600'
-                        : 'border-gray-200 bg-white/50 text-gray-600'
-                    }`}
-                  >
-                    <Sun size={20} />
-                    <span>Light</span>
-                  </button>
-                  <button
-                    onClick={() => setTheme('dark')}
-                    className={`flex-1 py-3 rounded-2xl border transition-all flex items-center justify-center space-x-2 ${
-                      theme === 'dark'
-                        ? 'border-purple-400 bg-purple-50 text-purple-600'
-                        : 'border-gray-200 bg-white/50 text-gray-600'
-                    }`}
-                  >
-                    <Moon size={20} />
-                    <span>Dark</span>
-                  </button>
-                </div>
-              </div>
+              
 
               <button
                 onClick={saveProfile}
